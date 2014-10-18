@@ -10,6 +10,7 @@
 # noinspection PyUnresolvedReferences
 import sys
 import gurobipy as grb
+import numpy as np
 import X2PLdata as Cdata
 
 
@@ -35,13 +36,19 @@ class ExtendedSimpleCovers():
             self.populate_model(my_data)
 
     def populate_model(self, my_data):
-        point_to_separate = my_data.pointToSeparate
+        pnt = my_data.pointToSeparate
+        t = my_data.period
+        cap = my_data.capacity[t]
         try:
             grb_model = grb.Model("Extended Simple Covers")
-            w_s = [grb_model.addVar(lb=0.0, ub=1.0, name="w_s" + str(i),
-                                    obj=point_to_separate.inventory[i] - point_to_separate.production[my_data.period,i])
+            w_s = [grb_model.addVar(vtype=grb.GRB.BINARY, name="w_s" + str(i),
+                                    obj=pnt.inventory[i] - pnt.production[t,i])
                    for i in range(my_data.PI)]
-
+            w_s = np.array(w_s)
+            w_k = [grb_model.addVar(vtype=grb.GRB.BINARY, name='w_k' + str(i),
+                                    obj=-pnt.production[t,i]-cap*pnt.setup[t,i])]
+            w_k = np.array(w_k)
+            grb_model.update()
         except grb.GurobiError:
             print 'Error reported'
 
