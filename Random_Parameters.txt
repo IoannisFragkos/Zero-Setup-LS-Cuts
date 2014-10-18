@@ -1,0 +1,7 @@
+1	30		range of items is [1,30]
+100	200		range of capacities is [100, 200]
+0.1	1.5		range of demand: random int in [(0.1, 1.5) * capacity]
+0.5 1.5		range of big M: random int in [(0.5, 1.5) * capacity]
+30			number of points to separate
+0	1.5		range of production: random int in [(0, 1.5) * demand]
+0	2		range of inventory: random int in [(0, 2) * demand]
