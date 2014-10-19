@@ -11,6 +11,7 @@
 import sys
 import gurobipy as grb
 import numpy as np
+
 import X2PLdata as Cdata
 
 
@@ -40,11 +41,22 @@ class ExtendedSimpleCovers():
         t = my_data.period
         cap = my_data.capacity[t]
         try:
-            grb_model = grb.Model("Extended Simple Covers")
-            w_s = add_var_array(grb_model, grb.GRB.BINARY, "w_s", pnt.inventory - pnt.production[t, :])
-            w_k = add_var_array(grb_model, grb.GRB.BINARY, "w_k", -pnt.production[t, :] - cap * pnt.setup[t, :])
-            q_s = add_var_array(grb_model, grb.GRB.CONTINUOUS, "q_s", pnt.setup[t, :] - 1)
-            grb_model.update()
+            ExtendedSimpleCovers.grb_model = grb.Model("Extended Simple Covers")
+            w_s = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.BINARY, "w_s",
+                                  pnt.inventory - pnt.production[t, :])
+            w_k = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.BINARY, "w_k",
+                                  -pnt.production[t, :] - cap * pnt.setup[t, :])
+            q_s = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "q_s",
+                                  pnt.setup[t, :] - 1)
+            b_s = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "b_s",
+                                  pnt.setup[t, :])
+            b_k = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "b_s",
+                                  0.)
+            t_ks = add_var_array2d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "t_ks",
+                                   pnt.setup[t, :], my_data.demand[t, :])
+            ExtendedSimpleCovers.grb_model.update()
+
+
         except grb.GurobiError:
             print 'Error reported'
 
@@ -52,16 +64,46 @@ class ExtendedSimpleCovers():
         pass
 
 
-def add_var_array(model, var_type, var_name, obj_val):
+def add_var_array1d(model, var_type, var_name, obj_val, size=1):
     """
     :param model:       gurobi model
     :param var_type:    type of variable (eg. gurobipy.GRB.BINARY)
     :param var_name:    string
     :param obj_val:     numpy array
-    :return:            numpy array of the pending variable
+    :param dimension:   array dimension. Creates a multi-dim array if changed from the default = 1
+    :return:            1d list of the pending variable
     """
-    temp_var = [model.addVar(vtype=var_type, name=var_name + str(i), obj=obj_val[i]) for i in range(obj_val.size)]
+    if is_np_array(obj_val):
+        temp_var = [model.addVar(vtype=var_type, name=var_name + str(i), obj=obj_val[i])
+                    for i in range(obj_val.size)]
+    else:
+        temp_var = [model.addVar(vtype=var_type, name=var_name + str(i), obj=obj_val)
+                    for i in range(size)]
     return temp_var
+
+
+def is_np_array(obj):
+    """
+    Checks if object is numpy array
+    :param obj:         any object
+    :return:            boolean
+    """
+    return type(obj).__module__ == np.__name__
+
+
+def add_var_array2d(model, var_type, var_name, obj_val1, obj_val2):
+    """
+    :param model:       gurobi model
+    :param var_type:    type of variable (string)
+    :param var_name:    name of variable (string)
+    :param obj_val1:    objective function is tensor product of obj_val1 and obj_val2
+    :param obj_val2:
+    :return:            2d list of gurobi variables
+    """
+    temp_var = [model.addVar(vtype=var_type, name=var_name + str(i) + str(j), obj=obj_val1[i] * obj_val2[j])
+                for i in range(obj_val1.size) for j in range(obj_val2.size)]
+    return temp_var
+
 
 if __name__ == '__main__':
     main()
