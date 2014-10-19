@@ -41,13 +41,9 @@ class ExtendedSimpleCovers():
         cap = my_data.capacity[t]
         try:
             grb_model = grb.Model("Extended Simple Covers")
-            w_s = [grb_model.addVar(vtype=grb.GRB.BINARY, name="w_s" + str(i),
-                                    obj=pnt.inventory[i] - pnt.production[t,i])
-                   for i in range(my_data.PI)]
-            w_s = np.array(w_s)
-            w_k = [grb_model.addVar(vtype=grb.GRB.BINARY, name='w_k' + str(i),
-                                    obj=-pnt.production[t,i]-cap*pnt.setup[t,i])]
-            w_k = np.array(w_k)
+            w_s = add_var_array(grb_model, grb.GRB.BINARY, "w_s", pnt.inventory - pnt.production[t, :])
+            w_k = add_var_array(grb_model, grb.GRB.BINARY, "w_k", -pnt.production[t, :] - cap * pnt.setup[t, :])
+            q_s = add_var_array(grb_model, grb.GRB.CONTINUOUS, "q_s", pnt.setup[t, :] - 1)
             grb_model.update()
         except grb.GurobiError:
             print 'Error reported'
@@ -55,6 +51,17 @@ class ExtendedSimpleCovers():
     def update_model(self, my_data):
         pass
 
+
+def add_var_array(model, var_type, var_name, obj_val):
+    """
+    :param model:       gurobi model
+    :param var_type:    type of variable (eg. gurobipy.GRB.BINARY)
+    :param var_name:    string
+    :param obj_val:     numpy array
+    :return:            numpy array of the pending variable
+    """
+    temp_var = [model.addVar(vtype=var_type, name=var_name + str(i), obj=obj_val[i]) for i in range(obj_val.size)]
+    return temp_var
 
 if __name__ == '__main__':
     main()
