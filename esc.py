@@ -11,18 +11,23 @@
 import sys
 import gurobipy as grb
 import numpy as np
+import const
 
 import X2PLdata as Cdata
+
+const.EPSILON = 0.0001
 
 
 def main():
     my_data = Cdata.X2PLdata('Random_Parameters.txt')
+
     my_data.period = 0
     esc_mip = ExtendedSimpleCovers(my_data)
+    esc_mip.optimize_model(write_lp=True, print_sol=True)
     print 'Here'
 
 
-class ExtendedSimpleCovers():
+class ExtendedSimpleCovers:
     """
     Holds the Extended simple covers model
     It creates only one model upon initialization. Then, it just changes the model
@@ -34,34 +39,89 @@ class ExtendedSimpleCovers():
         if self.is_initialized:
             self.update_model(my_data)
         else:
+            self.grb_model = grb.Model("Extended Simple Covers")
             self.populate_model(my_data)
 
     def populate_model(self, my_data):
         pnt = my_data.pointToSeparate
         t = my_data.period
         cap = my_data.capacity[t]
+        demand = my_data.demand
         try:
-            ExtendedSimpleCovers.grb_model = grb.Model("Extended Simple Covers")
-            w_s = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.BINARY, "w_s",
+            m = self.grb_model
+            w_s = add_var_array1d(m, grb.GRB.BINARY, "w_s",
                                   pnt.inventory - pnt.production[t, :])
-            w_k = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.BINARY, "w_k",
-                                  -pnt.production[t, :] - cap * pnt.setup[t, :])
-            q_s = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "q_s",
+            w_k = add_var_array1d(m, grb.GRB.BINARY, "w_k",
+                                  -pnt.production[t, :] + cap * pnt.setup[t, :])
+            b_s = add_var_array1d(m, grb.GRB.BINARY, "b_s",
+                                  np.zeros(my_data.PI))
+            b_k = add_var_array1d(m, grb.GRB.BINARY, "b_k",
+                                  np.zeros(my_data.PI))
+            z_s = add_var_array1d(m, grb.GRB.BINARY, "z_s",
+                                  np.zeros(my_data.PI))
+            t_ks = add_var_array2d(m, grb.GRB.BINARY, "t_ks",
+                                   pnt.setup[t, :], demand[t, :])
+            q_s = add_var_array1d(m, grb.GRB.CONTINUOUS, "q_s",
                                   pnt.setup[t, :] - 1)
-            b_s = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "b_s",
+            d_s = add_var_array1d(m, grb.GRB.CONTINUOUS, "d_s",
                                   pnt.setup[t, :])
-            b_k = add_var_array1d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "b_s",
-                                  0.)
-            t_ks = add_var_array2d(ExtendedSimpleCovers.grb_model, grb.GRB.CONTINUOUS, "t_ks",
-                                   pnt.setup[t, :], my_data.demand[t, :])
-            ExtendedSimpleCovers.grb_model.update()
+            lambda_t = m.addVar(vtype=grb.GRB.CONTINUOUS, name="lambda_t", obj=0.)
+            d_bar = m.addVar(vtype=grb.GRB.CONTINUOUS, name="d_bar", obj=0.)
 
+            objective = m.getObjective()
+            objective += cap
+            m.setObjective(objective, grb.GRB.MINIMIZE)
+            m.update()
 
-        except grb.GurobiError:
-            print 'Error reported'
+            max_demand = np.max(demand[t, :])
+            total_demand = np.sum(demand[t, :])
+            items_set = range(my_data.PI)
+            # max demand excluding item i
+            max_demand_arr = [np.max(np.ma.masked_equal(demand[t, :],
+                                                        demand[t, i])) for i in items_set]
+
+            m.addConstr(lambda_t == grb.quicksum(demand[t][i] * w_s[i] for i in items_set) - cap, "Lambda_Definition")
+            m.addConstr(lambda_t >= const.EPSILON, "Strictly_Positive_Cover")
+            m.addConstr(grb.quicksum(b_s[i] for i in items_set) == 1, "sum_of_b_s")
+            m.addConstr(d_bar >= lambda_t, "d_bar_lambda_t")
+            for i in items_set:
+                m.addConstr(w_k[i] + w_s[i] <= 1, "In_S_or_in_K_" + str(i))
+                m.addConstr(w_k[i] * my_data.bigM[t, i] <= d_s[i], "big_M" + str(i))
+                m.addConstr(d_bar >= demand[t, i] * w_s[i], "d_tilda_lb_" + str(i))
+                m.addConstr(d_bar <= demand[t, i] * b_s[i] + max_demand_arr[i] * (1 - b_s[i]), "d_tilda_ub_" + str(i))
+                m.addConstr(b_s[i] <= w_s[i], "b_s_w_s_"+str(i))
+                m.addConstr(d_s[i] <= max_demand * w_k[i], "d_s_first_ub_" + str(i))
+                m.addConstr(d_s[i] <= d_bar+max_demand * (1 - b_k[i]), "d_s_second_ub_" + str(i))
+                m.addConstr(d_s[i] <= demand[t, i]*w_k[i] + max_demand*b_k[i], "d_s_third_ub_"+str(i))
+                m.addConstr(d_s[i] >= d_bar - max_demand*(1-w_k[i]), "d_s_first_lb_"+str(i))
+                m.addConstr(d_s[i] >= demand[t, i]*w_k[i], "d_s_second_lb_"+str(i))
+                m.addConstr(q_s[i] >= demand[t, i]*w_s[i] + cap -
+                            grb.quicksum(demand[t, j]*w_s[j] for j in items_set), "q_s_first"+str(i))
+                m.addConstr(q_s[i] <= demand[t, i]*z_s[i]+cap -
+                            grb.quicksum(demand[t, j]*w_s[j] for j in items_set) +
+                            (total_demand-cap)*(1-z_s[i]), "q_s_second"+str(i))
+                m.addConstr(q_s[i] <= (demand[t, i] + cap - np.min(demand[t, :]))*z_s[i], "q_s_third"+str(i))
+                m.addConstr(z_s[i] <= w_s[i], "z_s_and_w_s"+str(i))
+                for j in range(my_data.PI):
+                    m.addConstr(t_ks[j*my_data.PI+i] <= w_s[j], "t_ij_with_w_s_"+str(i)+str(j))
+                    m.addConstr(t_ks[j*my_data.PI+i] <= w_k[i], "t_ij_with_w_s_"+str(i)+str(j))
+                    m.addConstr(t_ks[j*my_data.PI+i] >= w_k[i] + w_s[j] - 1, "t_ij_with_w_s_"+str(i)+str(j))
+            m.update()
+        except grb.GurobiError, e:
+            print e.message
 
     def update_model(self, my_data):
         pass
+
+    def optimize_model(self, write_lp=False, print_sol=False):
+        model = self.grb_model
+        model.optimize()
+        if write_lp:
+            model.write("test.lp")
+        status = model.status
+        if status == grb.GRB.status.OPTIMAL and print_sol:
+            for v in model.getVars():
+                print v.VarName, v.x
 
 
 def add_var_array1d(model, var_type, var_name, obj_val, size=1):

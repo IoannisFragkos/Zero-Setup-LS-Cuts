@@ -13,11 +13,12 @@ import random as rnd
 import numpy as np
 import const
 
-const.PERIODS = 2  # Later on we might at multiperiod relaxations
-rnd.seed(0)  # Change this in the future so that we generate many datasets
+const.PERIODS = 3
+rnd.seed(0)          # Change this in the future so that we generate many datasets
+np.random.seed(10)   # Debugged seeds: 10
 
 
-class X2PLdata():
+class X2PLdata:
     """
     The main data class.
     """
@@ -33,12 +34,17 @@ class X2PLdata():
             # range of production & inventory variables of points to be separated
             X2PLdata._productionRange = np.array([float(i) for i in data_file.readline().split()[:2]])
             X2PLdata._inventoryRange = np.array([float(i) for i in data_file.readline().split()[:2]])
-
         X2PLdata.PI = rnd.randint(X2PLdata._itemsRange[0], X2PLdata._itemsRange[1])
+        X2PLdata.Periods = const.PERIODS
         X2PLdata.capacity = np.array([rnd.randint(X2PLdata._capacityRange[0], X2PLdata._capacityRange[1])
                                       for _ in range(const.PERIODS)])
         X2PLdata.demand = make_random_2d_array(X2PLdata._demandRange)
         X2PLdata.bigM = make_random_2d_array(X2PLdata._bigMrange)
+        X2PLdata.production_cost = np.random.randint(1, 10, (X2PLdata.PI, X2PLdata.Periods))
+        X2PLdata.setup_cost = np.random.randint(10, 100, (X2PLdata.PI, X2PLdata.Periods))
+        X2PLdata.setup_time = np.zeros_like(X2PLdata.setup_cost)
+        X2PLdata.inventory_cost = np.random.randint(10, 100, (X2PLdata.PI, X2PLdata.Periods))/10
+        X2PLdata.inventory_cost[:, 0] *= 1000
         create_points()
         X2PLdata.pointToSeparate = X2PLdata.allPoints[0]  # Just  leave it like this for now, needs to be updated
 
@@ -74,9 +80,9 @@ class Point():
 
     def __init__(self, X2PLdata):
         self.production = np.multiply(X2PLdata.demand,
-                                      (X2PLdata._productionRange[1] - X2PLdata._productionRange[
-                                          0]) * np.random.random_sample((const.PERIODS, X2PLdata.PI)))
-        self.setup = np.random.random_sample((const.PERIODS, X2PLdata.PI))
-        self.inventory = np.multiply(X2PLdata.demand[0,:],
-                                     (X2PLdata._inventoryRange[1] - X2PLdata._inventoryRange[
-                                         0]) * np.random.random_sample(X2PLdata.PI))
+                                      (X2PLdata._productionRange[1] - X2PLdata._productionRange[0]) *
+                                      np.random.random_sample((const.PERIODS, X2PLdata.PI))).round()
+        self.setup = np.random.random_sample((const.PERIODS, X2PLdata.PI)).round(decimals=1)
+        self.inventory = np.multiply(X2PLdata.demand[0, :],
+                                     (X2PLdata._inventoryRange[1] - X2PLdata._inventoryRange[0]) *
+                                     np.random.random_sample(X2PLdata.PI)).round()
