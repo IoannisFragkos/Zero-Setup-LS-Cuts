@@ -13,7 +13,7 @@ import random as rnd
 import numpy as np
 import const
 
-const.PERIODS = 3
+const.PERIODS = 4
 rnd.seed(0)          # Change this in the future so that we generate many datasets
 np.random.seed(10)   # Debugged seeds: 10
 
@@ -40,11 +40,11 @@ class X2PLdata:
                                       for _ in range(const.PERIODS)])
         X2PLdata.demand = make_random_2d_array(X2PLdata._demandRange)
         X2PLdata.bigM = make_random_2d_array(X2PLdata._bigMrange)
-        X2PLdata.production_cost = np.random.randint(1, 10, (X2PLdata.PI, X2PLdata.Periods))
-        X2PLdata.setup_cost = np.random.randint(10, 100, (X2PLdata.PI, X2PLdata.Periods))
+        X2PLdata.production_cost = np.random.randint(1, 10, (X2PLdata.Periods, X2PLdata.PI))
+        X2PLdata.setup_cost = np.random.randint(10, 100, (X2PLdata.Periods, X2PLdata.PI))
         X2PLdata.setup_time = np.zeros_like(X2PLdata.setup_cost)
-        X2PLdata.inventory_cost = np.random.randint(10, 100, (X2PLdata.PI, X2PLdata.Periods))/10
-        X2PLdata.inventory_cost[:, 0] *= 1000
+        X2PLdata.inventory_cost = np.random.randint(10, 100, (X2PLdata.Periods, X2PLdata.PI))/10
+        X2PLdata.inventory_cost[0, :] *= 1000
         create_points()
         X2PLdata.pointToSeparate = X2PLdata.allPoints[0]  # Just  leave it like this for now, needs to be updated
 
