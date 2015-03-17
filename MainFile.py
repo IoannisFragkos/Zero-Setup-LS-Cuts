@@ -16,15 +16,18 @@ import LSModel as ls_Model
 
 def main():
     my_data = Cdata.X2PLdata('Random_Parameters.txt')
-    ls_Model.optimize()
+    ls_Model.make_model(my_data, print_lp=False)
+    root_lp = ls_Model.optimize(my_data, solve_relaxed=True, print_sol=True)
+
+    my_data.pointToSeparate.production = root_lp.production
+    my_data.pointToSeparate.setup = root_lp.setup
 
     for period in range(my_data.Periods - 1):
         my_data.period = period
-        my_data.pointToSeparate.production = ls_Model.production[:, period]
-        my_data.pointToSeparate.inventory = ls_Model.inventory[:, period + 1]
-        my_data.pointToSeparate.setup = ls_Model.setup[:, period]
+        my_data.pointToSeparate.inventory = root_lp.inventory[period + 2, :]
         esc_model = esc.ExtendedSimpleCovers(my_data)
-        esc_model.optimize_model()
+        cover, complement = esc_model.optimize_model(write_lp=True, print_sol=True)
+        ls_Model.add_esc(my_data, cover, complement, period, period + 1)
 
 
 if __name__ == '__main__':

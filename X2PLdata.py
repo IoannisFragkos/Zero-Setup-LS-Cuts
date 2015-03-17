@@ -10,8 +10,11 @@
 # -------------------------------------------------------------------------------
 # noinspection PyUnresolvedReferences
 import random as rnd
+
 import numpy as np
+
 import const
+
 
 const.PERIODS = 4
 rnd.seed(0)          # Change this in the future so that we generate many datasets
@@ -35,6 +38,7 @@ class X2PLdata:
             X2PLdata._productionRange = np.array([float(i) for i in data_file.readline().split()[:2]])
             X2PLdata._inventoryRange = np.array([float(i) for i in data_file.readline().split()[:2]])
         X2PLdata.PI = rnd.randint(X2PLdata._itemsRange[0], X2PLdata._itemsRange[1])
+        X2PLdata.PI = 3  # Only for debuggig, remove later
         X2PLdata.Periods = const.PERIODS
         X2PLdata.capacity = np.array([rnd.randint(X2PLdata._capacityRange[0], X2PLdata._capacityRange[1])
                                       for _ in range(const.PERIODS)])

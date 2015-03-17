@@ -9,13 +9,16 @@
 # -------------------------------------------------------------------------------
 # noinspection PyUnresolvedReferences
 import sys
+
 import gurobipy as grb
 import numpy as np
-import const
 
+import const
 import X2PLdata as Cdata
 
+
 const.EPSILON = 0.0001
+PI = 0
 
 
 def main():
@@ -24,7 +27,6 @@ def main():
     my_data.period = 0
     esc_mip = ExtendedSimpleCovers(my_data)
     esc_mip.optimize_model(write_lp=True, print_sol=True)
-    print 'Here'
 
 
 class ExtendedSimpleCovers:
@@ -47,6 +49,8 @@ class ExtendedSimpleCovers:
         t = my_data.period
         cap = my_data.capacity[t]
         demand = my_data.demand
+        global PI
+        PI = my_data.PI
         try:
             m = self.grb_model
             w_s = add_var_array1d(m, grb.GRB.BINARY, "w_s",
@@ -54,11 +58,11 @@ class ExtendedSimpleCovers:
             w_k = add_var_array1d(m, grb.GRB.BINARY, "w_k",
                                   -pnt.production[t, :] + cap * pnt.setup[t, :])
             b_s = add_var_array1d(m, grb.GRB.BINARY, "b_s",
-                                  np.zeros(my_data.PI))
+                                  np.zeros(PI))
             b_k = add_var_array1d(m, grb.GRB.BINARY, "b_k",
-                                  np.zeros(my_data.PI))
+                                  np.zeros(PI))
             z_s = add_var_array1d(m, grb.GRB.BINARY, "z_s",
-                                  np.zeros(my_data.PI))
+                                  np.zeros(PI))
             t_ks = add_var_array2d(m, grb.GRB.BINARY, "t_ks",
                                    pnt.setup[t, :], demand[t, :])
             q_s = add_var_array1d(m, grb.GRB.CONTINUOUS, "q_s",
@@ -75,7 +79,7 @@ class ExtendedSimpleCovers:
 
             max_demand = np.max(demand[t, :])
             total_demand = np.sum(demand[t, :])
-            items_set = range(my_data.PI)
+            items_set = range(PI)
             # max demand excluding item i
             max_demand_arr = [np.max(np.ma.masked_equal(demand[t, :],
                                                         demand[t, i])) for i in items_set]
@@ -89,23 +93,23 @@ class ExtendedSimpleCovers:
                 m.addConstr(w_k[i] * my_data.bigM[t, i] <= d_s[i], "big_M" + str(i))
                 m.addConstr(d_bar >= demand[t, i] * w_s[i], "d_tilda_lb_" + str(i))
                 m.addConstr(d_bar <= demand[t, i] * b_s[i] + max_demand_arr[i] * (1 - b_s[i]), "d_tilda_ub_" + str(i))
-                m.addConstr(b_s[i] <= w_s[i], "b_s_w_s_"+str(i))
+                m.addConstr(b_s[i] <= w_s[i], "b_s_w_s_" + str(i))
                 m.addConstr(d_s[i] <= max_demand * w_k[i], "d_s_first_ub_" + str(i))
-                m.addConstr(d_s[i] <= d_bar+max_demand * (1 - b_k[i]), "d_s_second_ub_" + str(i))
-                m.addConstr(d_s[i] <= demand[t, i]*w_k[i] + max_demand*b_k[i], "d_s_third_ub_"+str(i))
-                m.addConstr(d_s[i] >= d_bar - max_demand*(1-w_k[i]), "d_s_first_lb_"+str(i))
-                m.addConstr(d_s[i] >= demand[t, i]*w_k[i], "d_s_second_lb_"+str(i))
-                m.addConstr(q_s[i] >= demand[t, i]*w_s[i] + cap -
-                            grb.quicksum(demand[t, j]*w_s[j] for j in items_set), "q_s_first"+str(i))
-                m.addConstr(q_s[i] <= demand[t, i]*z_s[i]+cap -
-                            grb.quicksum(demand[t, j]*w_s[j] for j in items_set) +
-                            (total_demand-cap)*(1-z_s[i]), "q_s_second"+str(i))
-                m.addConstr(q_s[i] <= (demand[t, i] + cap - np.min(demand[t, :]))*z_s[i], "q_s_third"+str(i))
-                m.addConstr(z_s[i] <= w_s[i], "z_s_and_w_s"+str(i))
-                for j in range(my_data.PI):
-                    m.addConstr(t_ks[j*my_data.PI+i] <= w_s[j], "t_ij_with_w_s_"+str(i)+str(j))
-                    m.addConstr(t_ks[j*my_data.PI+i] <= w_k[i], "t_ij_with_w_s_"+str(i)+str(j))
-                    m.addConstr(t_ks[j*my_data.PI+i] >= w_k[i] + w_s[j] - 1, "t_ij_with_w_s_"+str(i)+str(j))
+                m.addConstr(d_s[i] <= d_bar + max_demand * (1 - b_k[i]), "d_s_second_ub_" + str(i))
+                m.addConstr(d_s[i] <= demand[t, i] * w_k[i] + max_demand * b_k[i], "d_s_third_ub_" + str(i))
+                m.addConstr(d_s[i] >= d_bar - max_demand * (1 - w_k[i]), "d_s_first_lb_" + str(i))
+                m.addConstr(d_s[i] >= demand[t, i] * w_k[i], "d_s_second_lb_" + str(i))
+                m.addConstr(q_s[i] >= demand[t, i] * w_s[i] + cap -
+                            grb.quicksum(demand[t, j] * w_s[j] for j in items_set), "q_s_first" + str(i))
+                m.addConstr(q_s[i] <= demand[t, i] * z_s[i] + cap -
+                            grb.quicksum(demand[t, j] * w_s[j] for j in items_set) +
+                            (total_demand - cap) * (1 - z_s[i]), "q_s_second" + str(i))
+                m.addConstr(q_s[i] <= (demand[t, i] + cap - np.min(demand[t, :])) * z_s[i], "q_s_third" + str(i))
+                m.addConstr(z_s[i] <= w_s[i], "z_s_and_w_s" + str(i))
+                for j in items_set:
+                    m.addConstr(t_ks[j * PI + i] <= w_s[j], "t_ij_with_w_s_" + str(i) + str(j))
+                    m.addConstr(t_ks[j * PI + i] <= w_k[i], "t_ij_with_w_s_" + str(i) + str(j))
+                    m.addConstr(t_ks[j * PI + i] >= w_k[i] + w_s[j] - 1, "t_ij_with_w_s_" + str(i) + str(j))
             m.update()
         except grb.GurobiError, e:
             print e.message
@@ -114,14 +118,29 @@ class ExtendedSimpleCovers:
         pass
 
     def optimize_model(self, write_lp=False, print_sol=False):
+        """
+        Solves the extended simple covers model and returns the cover items
+        and the subset of the complement items (both in lists).
+        If the cut is positive, it returns two empty lists
+        """
         model = self.grb_model
         model.optimize()
         if write_lp:
             model.write("test.lp")
         status = model.status
-        if status == grb.GRB.status.OPTIMAL and print_sol:
-            for v in model.getVars():
-                print v.VarName, v.x
+        if status == grb.GRB.status.OPTIMAL:
+            cover, complement = [], []
+            if print_sol:
+                for v in model.getVars():
+                    print v.VarName, v.x
+            if model.objVal > -const.EPSILON:
+                for i in range(PI):
+                    if model.getVarByName('w_s{}'.format(str(i))).X > 0.5:
+                        cover.append(i)
+                    if model.getVarByName('w_k{}'.format(str(i))).X > 0.5:
+                        complement.append(i)
+
+            return cover, complement
 
 
 def add_var_array1d(model, var_type, var_name, obj_val, size=1):
@@ -130,7 +149,6 @@ def add_var_array1d(model, var_type, var_name, obj_val, size=1):
     :param var_type:    type of variable (eg. gurobipy.GRB.BINARY)
     :param var_name:    string
     :param obj_val:     numpy array
-    :param dimension:   array dimension. Creates a multi-dim array if changed from the default = 1
     :return:            1d list of the pending variable
     """
     if is_np_array(obj_val):
