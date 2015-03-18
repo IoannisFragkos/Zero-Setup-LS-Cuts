@@ -100,10 +100,13 @@ def add_esc(my_data, cover, complement, period1, period2):
     checked again. However, if cover is empty then we abort the subroutine.
     """
     if cover:
-        llambda = my_data.demand[period1, cover].sum() - my_data.capacity[period1]
-        setup_coeff = np.maximum(my_data.demand[period1, :] - llambda, 0)
-        max_demand_in_cover = my_data.demand[period1, cover].max()
-        dbar = np.maximum(max_demand_in_cover, my_data.demand[period1, :])
+        cum_dem = my_data.cum_demand[period2 - 1, :] - (my_data.cum_demand[period1 - 1, :] if period1 > 0 else 0)
+        demand = np.vstack((cum_dem, my_data.demand[period2 - 1, :]))
+
+        llambda = demand[period1, cover].sum() - my_data.capacity[period1]
+        setup_coeff = np.maximum(demand[0, :] - llambda, 0)
+        max_demand_in_cover = demand[0, cover].max()
+        dbar = np.maximum(max_demand_in_cover, demand[0, :])
 
         model.addConstr(quicksum(inventory_var[period2, i] for i in cover) -
                         quicksum(production_var[period1, i] for i in (cover + complement)) +

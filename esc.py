@@ -35,10 +35,9 @@ class ExtendedSimpleCovers:
     It creates only one model upon initialization. Then, it just changes the model
     data
     """
-    is_initialized = False
 
     def __init__(self, my_data):
-        if self.is_initialized:
+        if my_data.period1 != 0 or my_data.period2 != 2:
             self.update_model(my_data)
         else:
             self.grb_model = grb.Model("Extended Simple Covers")
@@ -55,22 +54,14 @@ class ExtendedSimpleCovers:
         PI = my_data.PI
         try:
             m = self.grb_model
-            w_s = add_var_array1d(m, grb.GRB.BINARY, "w_s",
-                                  pnt.inventory - pnt.production[t, :])
-            w_k = add_var_array1d(m, grb.GRB.BINARY, "w_k",
-                                  -pnt.production[t, :] + cap * pnt.setup[t, :])
-            b_s = add_var_array1d(m, grb.GRB.BINARY, "b_s",
-                                  np.zeros(PI))
-            b_k = add_var_array1d(m, grb.GRB.BINARY, "b_k",
-                                  np.zeros(PI))
-            z_s = add_var_array1d(m, grb.GRB.BINARY, "z_s",
-                                  np.zeros(PI))
-            t_ks = add_var_array2d(m, grb.GRB.BINARY, "t_ks",
-                                   pnt.setup[t, :], demand[t, :])
-            q_s = add_var_array1d(m, grb.GRB.CONTINUOUS, "q_s",
-                                  pnt.setup[t, :] - 1)
-            d_s = add_var_array1d(m, grb.GRB.CONTINUOUS, "d_s",
-                                  pnt.setup[t, :])
+            w_s = add_var_array1d(m, grb.GRB.BINARY, "w_s", pnt.inventory - pnt.production[t, :])
+            w_k = add_var_array1d(m, grb.GRB.BINARY, "w_k", -pnt.production[t, :] + cap * pnt.setup[t, :])
+            b_s = add_var_array1d(m, grb.GRB.BINARY, "b_s", np.zeros(PI))
+            b_k = add_var_array1d(m, grb.GRB.BINARY, "b_k", np.zeros(PI))
+            z_s = add_var_array1d(m, grb.GRB.BINARY, "z_s", np.zeros(PI))
+            t_ks = add_var_array2d(m, grb.GRB.BINARY, "t_ks", pnt.setup[t, :], demand[0, :])
+            q_s = add_var_array1d(m, grb.GRB.CONTINUOUS, "q_s", pnt.setup[t, :] - 1)
+            d_s = add_var_array1d(m, grb.GRB.CONTINUOUS, "d_s", pnt.setup[t, :])
             lambda_t = m.addVar(vtype=grb.GRB.CONTINUOUS, name="lambda_t", obj=0.)
             d_bar = m.addVar(vtype=grb.GRB.CONTINUOUS, name="d_bar", obj=0.)
 
@@ -79,34 +70,33 @@ class ExtendedSimpleCovers:
             m.setObjective(objective, grb.GRB.MINIMIZE)
             m.update()
 
-            max_demand = np.max(demand[t, :])
-            total_demand = np.sum(demand[t, :])
+            max_demand = np.max(demand[0, :])
+            total_demand = np.sum(demand[0, :])
             items_set = range(PI)
             # max demand excluding item i
-            max_demand_arr = [np.max(np.ma.masked_equal(demand[t, :],
-                                                        demand[t, i])) for i in items_set]
+            max_demand_arr = [np.max(np.ma.masked_equal(demand[0, :], demand[0, i])) for i in items_set]
 
-            m.addConstr(lambda_t == grb.quicksum(demand[t][i] * w_s[i] for i in items_set) - cap, "Lambda_Definition")
+            m.addConstr(lambda_t == grb.quicksum(demand[0][i] * w_s[i] for i in items_set) - cap, "Lambda_Definition")
             m.addConstr(lambda_t >= const.EPSILON, "Strictly_Positive_Cover")
             m.addConstr(grb.quicksum(b_s[i] for i in items_set) == 1, "sum_of_b_s")
             m.addConstr(d_bar >= lambda_t, "d_bar_lambda_t")
             for i in items_set:
                 m.addConstr(w_k[i] + w_s[i] <= 1, "In_S_or_in_K_" + str(i))
                 m.addConstr(w_k[i] * my_data.bigM[t, i] <= d_s[i], "big_M" + str(i))
-                m.addConstr(d_bar >= demand[t, i] * w_s[i], "d_tilda_lb_" + str(i))
-                m.addConstr(d_bar <= demand[t, i] * b_s[i] + max_demand_arr[i] * (1 - b_s[i]), "d_tilda_ub_" + str(i))
+                m.addConstr(d_bar >= demand[0, i] * w_s[i], "d_tilda_lb_" + str(i))
+                m.addConstr(d_bar <= demand[0, i] * b_s[i] + max_demand_arr[i] * (1 - b_s[i]), "d_tilda_ub_" + str(i))
                 m.addConstr(b_s[i] <= w_s[i], "b_s_w_s_" + str(i))
                 m.addConstr(d_s[i] <= max_demand * w_k[i], "d_s_first_ub_" + str(i))
                 m.addConstr(d_s[i] <= d_bar + max_demand * (1 - b_k[i]), "d_s_second_ub_" + str(i))
-                m.addConstr(d_s[i] <= demand[t, i] * w_k[i] + max_demand * b_k[i], "d_s_third_ub_" + str(i))
+                m.addConstr(d_s[i] <= demand[0, i] * w_k[i] + max_demand * b_k[i], "d_s_third_ub_" + str(i))
                 m.addConstr(d_s[i] >= d_bar - max_demand * (1 - w_k[i]), "d_s_first_lb_" + str(i))
-                m.addConstr(d_s[i] >= demand[t, i] * w_k[i], "d_s_second_lb_" + str(i))
-                m.addConstr(q_s[i] >= demand[t, i] * w_s[i] + cap -
-                            grb.quicksum(demand[t, j] * w_s[j] for j in items_set), "q_s_first" + str(i))
-                m.addConstr(q_s[i] <= demand[t, i] * z_s[i] + cap -
-                            grb.quicksum(demand[t, j] * w_s[j] for j in items_set) +
+                m.addConstr(d_s[i] >= demand[0, i] * w_k[i], "d_s_second_lb_" + str(i))
+                m.addConstr(q_s[i] >= demand[0, i] * w_s[i] + cap -
+                            grb.quicksum(demand[0, j] * w_s[j] for j in items_set), "q_s_first" + str(i))
+                m.addConstr(q_s[i] <= demand[0, i] * z_s[i] + cap -
+                            grb.quicksum(demand[0, j] * w_s[j] for j in items_set) +
                             (total_demand - cap) * (1 - z_s[i]), "q_s_second" + str(i))
-                m.addConstr(q_s[i] <= (demand[t, i] + cap - np.min(demand[t, :])) * z_s[i], "q_s_third" + str(i))
+                m.addConstr(q_s[i] <= (demand[0, i] + cap - np.min(demand[0, :])) * z_s[i], "q_s_third" + str(i))
                 m.addConstr(z_s[i] <= w_s[i], "z_s_and_w_s" + str(i))
                 for j in items_set:
                     m.addConstr(t_ks[j * PI + i] <= w_s[j], "1t_ij_with_w_s_{0}{1}".format(str(i), str(j)))
@@ -143,7 +133,6 @@ class ExtendedSimpleCovers:
                         cover.append(i)
                     if model.getVarByName('w_k{}'.format(str(i))).X > 0.5:
                         complement.append(i)
-
             return cover, complement
 
 

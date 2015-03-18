@@ -31,7 +31,7 @@ def main():
             my_data.period2 = period2
             my_data.pointToSeparate.inventory = root_lp.inventory[period2, :]
             esc_model = esc.ExtendedSimpleCovers(my_data)
-            cover, complement = esc_model.optimize_model(write_lp=False, print_sol=False)
+            cover, complement = esc_model.optimize_model(write_lp=True, print_sol=True)
             ls_Model.add_esc(my_data, cover, complement, period1, period2)
 
     root_lp_esc_cuts = ls_Model.optimize(my_data, solve_relaxed=True, print_sol=True)
