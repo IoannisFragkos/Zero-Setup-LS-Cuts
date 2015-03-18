@@ -17,8 +17,8 @@ import const
 
 
 const.PERIODS = 4
-rnd.seed(0)          # Change this in the future so that we generate many datasets
-np.random.seed(10)   # Debugged seeds: 10
+rnd.seed(0)  # Change this in the future so that we generate many datasets
+np.random.seed(3)  # Debugged seeds: 10
 
 
 class X2PLdata:
@@ -47,10 +47,43 @@ class X2PLdata:
         X2PLdata.production_cost = np.random.randint(1, 10, (X2PLdata.Periods, X2PLdata.PI))
         X2PLdata.setup_cost = np.random.randint(10, 100, (X2PLdata.Periods, X2PLdata.PI))
         X2PLdata.setup_time = np.zeros_like(X2PLdata.setup_cost)
-        X2PLdata.inventory_cost = np.random.randint(10, 100, (X2PLdata.Periods, X2PLdata.PI))/10
+        X2PLdata.inventory_cost = np.random.randint(10, 100, (X2PLdata.Periods, X2PLdata.PI)) / 10
         X2PLdata.inventory_cost[0, :] *= 1000
         create_points()
         X2PLdata.pointToSeparate = X2PLdata.allPoints[0]  # Just  leave it like this for now, needs to be updated
+        X2PLdata.cum_demand = np.cumsum(X2PLdata.demand, 0)
+
+
+class TrigeiroData:
+    """
+    Reads Data from a file with Trigeiro format (not the fortran one, the other)
+    """
+
+    def __init__(self, file_name):
+        with open(file_name) as data_file:
+            TrigeiroData.PI, TrigeiroData.Periods = [int(x) for x in data_file.readline().split()]
+            item_range, period_range = range(TrigeiroData.PI), range(TrigeiroData.Periods)
+            cap = float(data_file.readline())
+            TrigeiroData.capacity = np.array([cap for _ in period_range])
+            misc_data = np.array([[float(x) for x in data_file.readline().split()] for _ in item_range])
+            TrigeiroData.demand = np.array([[float(x) for x in data_file.readline().split()] for _ in period_range])
+        TrigeiroData.variable_time = np.tile(misc_data[:, 0], (TrigeiroData.Periods, 1))
+        TrigeiroData.inventory_cost = np.tile(misc_data[:, 1], (TrigeiroData.Periods, 1))
+        TrigeiroData.inventory_cost[0, :] *= 100
+        TrigeiroData.setup_time = np.tile(misc_data[:, 3], (TrigeiroData.Periods, 1))
+        TrigeiroData.setup_cost = np.tile(misc_data[:, 4], (TrigeiroData.Periods, 1))
+        TrigeiroData.production_cost = np.tile(misc_data[:, 5], (TrigeiroData.Periods, 1))
+        TrigeiroData.cum_demand = np.cumsum(TrigeiroData.demand, 0)
+        total_item_demand = TrigeiroData.demand.sum(0)
+        TrigeiroData.bigM = np.minimum(total_item_demand - TrigeiroData.cum_demand + TrigeiroData.demand,
+                                       (np.tile(TrigeiroData.capacity, (TrigeiroData.PI, 1)).transpose() -
+                                        TrigeiroData.setup_time) / TrigeiroData.variable_time)
+
+        production, setup, inventory = np.empty((TrigeiroData.Periods, TrigeiroData.PI)), \
+                                       np.empty((TrigeiroData.Periods, TrigeiroData.PI)), \
+                                       np.empty((TrigeiroData.Periods, TrigeiroData.PI))
+
+        TrigeiroData.pointToSeparate = Point(TrigeiroData)
 
 
 def create_points():
@@ -60,7 +93,7 @@ def create_points():
     """
     X2PLdata.allPoints = np.empty(X2PLdata.pointsToSeparate, dtype=object)
     for i in range(X2PLdata.pointsToSeparate):
-        X2PLdata.allPoints[i] = Point(X2PLdata)
+        X2PLdata.allPoints[i] = Point(X2PLdata, random=True)
 
 
 def make_random_2d_array(this_array):
@@ -82,11 +115,30 @@ class Point():
     Inventory is derived from demand values of first period, in a random fashion
     """
 
-    def __init__(self, X2PLdata):
-        self.production = np.multiply(X2PLdata.demand,
-                                      (X2PLdata._productionRange[1] - X2PLdata._productionRange[0]) *
-                                      np.random.random_sample((const.PERIODS, X2PLdata.PI))).round()
-        self.setup = np.random.random_sample((const.PERIODS, X2PLdata.PI)).round(decimals=1)
-        self.inventory = np.multiply(X2PLdata.demand[0, :],
-                                     (X2PLdata._inventoryRange[1] - X2PLdata._inventoryRange[0]) *
-                                     np.random.random_sample(X2PLdata.PI)).round()
+    def __init__(self, data, random=False):
+
+        """
+
+        :rtype : Point object
+        """
+        if random:
+            self.production = np.multiply(data.demand,
+                                          (data._productionRange[1] - data._productionRange[0]) *
+                                          np.random.random_sample((const.PERIODS, data.PI))).round()
+            self.setup = np.random.random_sample((const.PERIODS, data.PI)).round(decimals=1)
+            self.inventory = np.multiply(data.demand[0, :],
+                                         (data._inventoryRange[1] - data._inventoryRange[0]) *
+                                         np.random.random_sample(data.PI)).round()
+        else:
+            self.production, self.setup, self.inventory = np.empty((data.Periods, data.PI)), \
+                                                          np.empty((data.Periods, data.PI)), \
+                                                          np.empty((data.Periods, data.PI))
+
+
+def test():
+    data = TrigeiroData('CL34.in')
+    print 'ok'
+
+
+if __name__ == '__main__':
+    test()

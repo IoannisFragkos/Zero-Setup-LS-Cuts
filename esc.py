@@ -46,9 +46,11 @@ class ExtendedSimpleCovers:
 
     def populate_model(self, my_data):
         pnt = my_data.pointToSeparate
-        t = my_data.period
+        t = my_data.period1
+        t2 = my_data.period2
         cap = my_data.capacity[t]
-        demand = my_data.demand
+        cum_dem = my_data.cum_demand[t2 - 1, :] - (my_data.cum_demand[t - 1, :] if t > 0 else 0)
+        demand = np.vstack((cum_dem, my_data.demand[t2 - 1, :]))
         global PI
         PI = my_data.PI
         try:
@@ -107,10 +109,11 @@ class ExtendedSimpleCovers:
                 m.addConstr(q_s[i] <= (demand[t, i] + cap - np.min(demand[t, :])) * z_s[i], "q_s_third" + str(i))
                 m.addConstr(z_s[i] <= w_s[i], "z_s_and_w_s" + str(i))
                 for j in items_set:
-                    m.addConstr(t_ks[j * PI + i] <= w_s[j], "t_ij_with_w_s_" + str(i) + str(j))
-                    m.addConstr(t_ks[j * PI + i] <= w_k[i], "t_ij_with_w_s_" + str(i) + str(j))
-                    m.addConstr(t_ks[j * PI + i] >= w_k[i] + w_s[j] - 1, "t_ij_with_w_s_" + str(i) + str(j))
+                    m.addConstr(t_ks[j * PI + i] <= w_s[j], "1t_ij_with_w_s_{0}{1}".format(str(i), str(j)))
+                    m.addConstr(t_ks[j * PI + i] <= w_k[i], "2t_ij_with_w_s_{0}{1}".format(str(i), str(j)))
+                    m.addConstr(t_ks[j * PI + i] >= w_k[i] + w_s[j] - 1, "3t_ij_with_w_s_{0}{1}".format(str(i), str(j)))
             m.update()
+            m.setParam('OutputFlag', False)
         except grb.GurobiError, e:
             print e.message
 
@@ -133,7 +136,8 @@ class ExtendedSimpleCovers:
             if print_sol:
                 for v in model.getVars():
                     print v.VarName, v.x
-            if model.objVal > -const.EPSILON:
+            if model.objVal < -const.EPSILON:
+                print "adding new cut"
                 for i in range(PI):
                     if model.getVarByName('w_s{}'.format(str(i))).X > 0.5:
                         cover.append(i)
