@@ -18,7 +18,6 @@ import X2PLdata as Cdata
 
 
 const.EPSILON = 0.0001
-PI = 0
 
 
 def main():
@@ -36,22 +35,20 @@ class ExtendedSimpleCovers:
     data
     """
 
-    def __init__(self, my_data):
-        if my_data.period1 != 0 or my_data.period2 != 2:
-            self.update_model(my_data)
-        else:
-            self.grb_model = grb.Model("Extended Simple Covers")
-            self.populate_model(my_data)
+    def __init__(self):
+        self.grb_model = grb.Model("Extended Simple Covers")
+        self.is_populated = False
 
     def populate_model(self, my_data):
         pnt = my_data.pointToSeparate
         t = my_data.period1
         t2 = my_data.period2
         cap = my_data.capacity[t]
-        cum_dem = my_data.cum_demand[t2 - 1, :] - (my_data.cum_demand[t - 1, :] if t > 0 else 0)
+        cum_dem = my_data.cum_demand[t2 - 1, :] - (my_data.cum_demand[t - 1, :]
+                                                   if t > 0 else np.zeros(shape=my_data.PI, dtype=float))
         demand = np.vstack((cum_dem, my_data.demand[t2 - 1, :]))
-        global PI
-        PI = my_data.PI
+        self.PI = my_data.PI
+        PI = self.PI
         try:
             m = self.grb_model
             w_s = add_var_array1d(m, grb.GRB.BINARY, "w_s", pnt.inventory - pnt.production[t, :])
@@ -108,7 +105,77 @@ class ExtendedSimpleCovers:
             print e.message
 
     def update_model(self, my_data):
-        pass
+
+        t = my_data.period1
+        t2 = my_data.period2
+        cap = my_data.capacity[t]
+        pnt = my_data.pointToSeparate
+        PI = self.PI
+        cum_dem = my_data.cum_demand[t2 - 1, :] - (my_data.cum_demand[t - 1, :]
+                                                   if t > 0 else np.zeros(shape=my_data.PI, dtype=float))
+        demand = np.vstack((cum_dem, my_data.demand[t2 - 1, :]))
+        items_set = xrange(PI)
+        max_demand = np.max(demand[0, :])
+        total_demand = np.sum(demand[0, :])
+        # max demand excluding item i
+        max_demand_arr = np.array([np.max(np.ma.masked_equal(demand[0, :], demand[0, i])) for i in items_set])
+
+        m = self.grb_model
+
+        objective = cap
+
+        constraint = m.getConstrByName("Lambda_Definition")
+        constraint.setAttr("rhs", -cap)
+
+        # For each variable, loop through all constraints and update their coefficients
+        for i in items_set:
+
+            objective += m.getVarByName('w_s' + str(i)) * (pnt.inventory[i] - pnt.production[t, i])
+            objective += m.getVarByName('w_k' + str(i)) * (-pnt.production[t, i] + cap * pnt.setup[t, i])
+            objective += m.getVarByName('q_s' + str(i)) * (pnt.setup[t, i] - 1)
+            objective += m.getVarByName('d_s' + str(i)) * pnt.setup[t, i]
+            for j in items_set:
+                objective += m.getVarByName('t_ks' + str(i) + str(j)) * (pnt.setup[t, i] * demand[0, i])
+
+            m.chgCoeff(constraint, m.getVarByName('w_s' + str(i)), -demand[0][i])
+
+            m.chgCoeff(m.getConstrByName("big_M" + str(i)), m.getVarByName("w_k" + str(i)), my_data.bigM[t, i])
+
+            m.chgCoeff(m.getConstrByName("d_tilda_lb_" + str(i)), m.getVarByName("w_s" + str(i)), -demand[0, i])
+
+            m.getConstrByName("d_tilda_ub_" + str(i)).setAttr("rhs", max_demand_arr[i])
+            m.chgCoeff(m.getConstrByName("d_tilda_ub_" + str(i)), m.getVarByName("b_s" + str(i)),
+                       -demand[0, i] + max_demand_arr[i])
+
+            m.chgCoeff(m.getConstrByName("d_s_first_ub_" + str(i)), m.getVarByName("w_k" + str(i)), -max_demand)
+
+            m.getConstrByName("d_s_second_ub_" + str(i)).setAttr("rhs", max_demand)
+            m.chgCoeff(m.getConstrByName("d_s_second_ub_" + str(i)), m.getVarByName("b_k" + str(i)), max_demand)
+
+            m.chgCoeff(m.getConstrByName("d_s_third_ub_" + str(i)), m.getVarByName("b_k" + str(i)), -max_demand)
+            m.chgCoeff(m.getConstrByName("d_s_third_ub_" + str(i)), m.getVarByName("w_k" + str(i)), -demand[0, i])
+
+            m.getConstrByName("d_s_first_lb_" + str(i)).setAttr("rhs", -max_demand)
+            m.chgCoeff(m.getConstrByName("d_s_first_lb_" + str(i)), m.getVarByName("w_k" + str(i)), -max_demand)
+
+            m.chgCoeff(m.getConstrByName("d_s_second_lb_" + str(i)), m.getVarByName("w_k" + str(i)), -demand[0, i])
+
+            m.getConstrByName("q_s_first" + str(i)).setAttr("rhs", cap)
+            for j in items_set:
+                m.chgCoeff(m.getConstrByName("q_s_first" + str(i)), m.getVarByName("w_s" + str(j)), demand[0, j])
+
+            m.getConstrByName("q_s_second" + str(i)).setAttr("rhs", total_demand)
+            m.chgCoeff(m.getConstrByName("q_s_second" + str(i)),
+                       m.getVarByName("z_s" + str(i)), total_demand - demand[0, i] - cap)
+            for j in items_set:
+                m.chgCoeff(m.getConstrByName("q_s_second" + str(i)), m.getVarByName("w_s" + str(j)), demand[0, j])
+
+            m.chgCoeff(m.getConstrByName("q_s_third" + str(i)),
+                       m.getVarByName("z_s" + str(i)), np.min(demand[0, :]) - cap - demand[0, i])
+
+        m.setObjective(objective)
+
+        m.update()
 
     def optimize_model(self, write_lp=False, print_sol=False):
         """
@@ -124,16 +191,20 @@ class ExtendedSimpleCovers:
         if status == grb.GRB.status.OPTIMAL:
             cover, complement = [], []
             if print_sol:
+                print 'esc objective: {}'.format(model.objVal)
                 for v in model.getVars():
-                    print v.VarName, v.x
+                    if v.x > const.EPSILON:
+                        print v.VarName, v.x
             if model.objVal < -const.EPSILON:
-                print "adding new cut"
-                for i in range(PI):
+                for i in range(self.PI):
                     if model.getVarByName('w_s{}'.format(str(i))).X > 0.5:
                         cover.append(i)
                     if model.getVarByName('w_k{}'.format(str(i))).X > 0.5:
                         complement.append(i)
             return cover, complement
+        elif model.status == grb.GRB.status.INF_OR_UNBD:
+            model.computeIIS()
+            model.write('test.ilp')
 
 
 def add_var_array1d(model, var_type, var_name, obj_val, size=1):
