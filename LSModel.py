@@ -20,7 +20,7 @@ model = Model("CLST")
 model.params.preCrush = 1
 model.params.Cuts = 0
 model.params.Presolve = 0
-# model.params.NodeLimit = 3
+model.params.NodeLimit = 1
 Solution = namedtuple('Solution', 'objective production setup inventory')
 production_var, setup_var, inventory_var = {}, {}, {}
 
@@ -52,21 +52,22 @@ def make_model(my_data, print_lp=False):
     return model
 
 
-def optimize(my_data, solve_relaxed=False, print_sol=False, callback=None):
+def optimize(my_data, model, solve_relaxed=False, print_sol=False, callback=None, log=False):
     """
 
     :rtype : returns a named tuple of type 'Solution',
     that carries the objective function value, and the optimal solution
     """
     try:
-        model = model.relax() if solve_relaxed else model
-        model.setParam('OutputFlag', False)
-        model.update()
+        mdl = model.relax() if solve_relaxed else model
+        if not log:
+            mdl.setParam('OutputFlag', True)
+        mdl.update()
         if callback:
-            model.optimize(callback)
+            mdl.optimize(callback)
         else:
-            model.optimize()
-        lp_solution = get_lp_solution(model=model, data=my_data, print_sol=print_sol)
+            mdl.optimize()
+        lp_solution = get_lp_solution(model=mdl, data=my_data, print_sol=print_sol)
         return lp_solution
     except GurobiError, e:
         print e.message
@@ -92,7 +93,7 @@ def get_lp_solution(data, model, callback=False, print_sol=False):
 
             production = np.array([model._production[i].X for i in xrange(data.Periods * data.PI)]).reshape(periods, PI)
             setup = np.array([model._setup[i].X for i in xrange(data.Periods * data.PI)]).reshape(periods, PI)
-            inventory = np.array([model._inventory[i].X for i in xrange(data.Periods)])
+            inventory = np.array([model._inventory[i].X for i in xrange(data.Periods * data.PI)]).reshape(periods, PI)
             model._objective = model.objVal
     except GurobiError, e:
         print e.message
@@ -117,7 +118,7 @@ def print_solution(data, solution):
     print 'Objective function: {}'.format(solution.objective)
 
 
-def add_esc(my_data, cover, complement, period1, period2, callback=False, print_diag=False):
+def add_esc(my_data, cover, complement, period, period1, period2, callback=False, print_diag=False):
     """
     :param my_data: problem data
     :param cover: set of items that belong to the cover, should be a list
@@ -130,9 +131,9 @@ def add_esc(my_data, cover, complement, period1, period2, callback=False, print_
     """
     if cover:
         if print_diag:
-            print 'Adding cut.. Node: {},  Period 1: {}, Period 2: {},  ' \
-                  'Cover:{}, Complement: {}'.format(model.cbGet(GRB.callback.MIPSOL_NODCNT), period1, period2, cover,
-                                                    complement)
+            print 'Adding cut.. Period 1: {}, Period 2: {},  ' \
+                  'Cover:{}, Complement: {} Period: {}'.format(period1, period2, cover,
+                                                               complement, period)
         cum_dem = my_data.cum_demand[period2 - 1, :] - (my_data.cum_demand[period1 - 1, :]
                                                         if period1 > 0 else np.zeros(shape=my_data.PI, dtype=float))
         demand = np.vstack((cum_dem, my_data.demand[period2 - 1, :]))
@@ -147,6 +148,7 @@ def add_esc(my_data, cover, complement, period1, period2, callback=False, print_
                         quicksum(production_var[period1, i] for i in (cover + complement)) +
                         quicksum(setup_coeff[i] * (setup_var[period1, i] - 1) for i in cover) +
                         quicksum((dbar[i] - llambda) * setup_var[period1, i] for i in complement) +
+                        quicksum(dbar[i] * setup_var[period2 - 1, i] - production_var[period2 - 1, i] for i in period) +
                         my_data.capacity[period1] >= 0)
 
         else:
@@ -154,6 +156,8 @@ def add_esc(my_data, cover, complement, period1, period2, callback=False, print_
                             quicksum(production_var[period1, i] for i in (cover + complement)) +
                             quicksum(setup_coeff[i] * (setup_var[period1, i] - 1) for i in cover) +
                             quicksum((dbar[i] - llambda) * setup_var[period1, i] for i in complement) +
+                            quicksum(
+                                dbar[i] * setup_var[period2 - 1, i] - production_var[period2 - 1, i] for i in period) +
                             my_data.capacity[period1] >= 0,
                             name='esc_{0}{1}_{2}.{3}'.format(''.join(str(ii) for ii in cover),
                                                              '.'.join(str(jj) for jj in complement),

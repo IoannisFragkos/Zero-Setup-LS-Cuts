@@ -63,8 +63,8 @@ class TrigeiroData:
         with open(file_name) as data_file:
             TrigeiroData.PI, TrigeiroData.Periods = [int(x) for x in data_file.readline().split()]
             item_range, period_range = range(TrigeiroData.PI), range(TrigeiroData.Periods)
-            cap = float(data_file.readline())
-            TrigeiroData.capacity = np.array([cap for _ in period_range])
+            cap = [float(x) for x in data_file.readline().split()]
+            TrigeiroData.capacity = np.array(cap) if len(cap) > 1 else np.array([cap[0] for _ in period_range])
             misc_data = np.array([[float(x) for x in data_file.readline().split()] for _ in item_range])
             TrigeiroData.demand = np.array([[float(x) for x in data_file.readline().split()] for _ in period_range])
         TrigeiroData.variable_time = np.tile(misc_data[:, 0], (TrigeiroData.Periods, 1))
@@ -72,7 +72,7 @@ class TrigeiroData:
         TrigeiroData.inventory_cost[0, :] *= 100
         TrigeiroData.setup_time = np.tile(misc_data[:, 3], (TrigeiroData.Periods, 1))
         TrigeiroData.setup_cost = np.tile(misc_data[:, 4], (TrigeiroData.Periods, 1))
-        TrigeiroData.production_cost = np.tile(misc_data[:, 5], (TrigeiroData.Periods, 1))
+        TrigeiroData.production_cost = np.zeros(shape=(TrigeiroData.Periods, TrigeiroData.PI))
         TrigeiroData.cum_demand = np.cumsum(TrigeiroData.demand, 0)
         total_item_demand = TrigeiroData.demand.sum(0)
         TrigeiroData.bigM = np.minimum(total_item_demand - TrigeiroData.cum_demand + TrigeiroData.demand,

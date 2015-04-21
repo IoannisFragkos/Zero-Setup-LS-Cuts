@@ -53,6 +53,8 @@ class ExtendedSimpleCovers:
             m = self.grb_model
             w_s = add_var_array1d(m, grb.GRB.BINARY, "w_s", pnt.inventory - pnt.production[t, :])
             w_k = add_var_array1d(m, grb.GRB.BINARY, "w_k", -pnt.production[t, :] + cap * pnt.setup[t, :])
+            w_p = add_var_array1d(m, grb.GRB.BINARY, "w_p",
+                                  demand[1, :] * pnt.setup[t2 - 1, :] - pnt.production[t2 - 1., :])
             b_s = add_var_array1d(m, grb.GRB.BINARY, "b_s", np.zeros(PI))
             b_k = add_var_array1d(m, grb.GRB.BINARY, "b_k", np.zeros(PI))
             z_s = add_var_array1d(m, grb.GRB.BINARY, "z_s", np.zeros(PI))
@@ -79,6 +81,7 @@ class ExtendedSimpleCovers:
             m.addConstr(d_bar >= lambda_t, "d_bar_lambda_t")
             for i in items_set:
                 m.addConstr(w_k[i] + w_s[i] <= 1, "In_S_or_in_K_" + str(i))
+                m.addConstr(w_p[i] <= w_s[i], "Period_extension_" + str(i))
                 m.addConstr(w_k[i] * my_data.bigM[t, i] <= d_s[i], "big_M" + str(i))
                 m.addConstr(d_bar >= demand[0, i] * w_s[i], "d_tilda_lb_" + str(i))
                 m.addConstr(d_bar <= demand[0, i] * b_s[i] + max_demand_arr[i] * (1 - b_s[i]), "d_tilda_ub_" + str(i))
@@ -116,9 +119,11 @@ class ExtendedSimpleCovers:
         demand = np.vstack((cum_dem, my_data.demand[t2 - 1, :]))
         items_set = xrange(PI)
         max_demand = np.max(demand[0, :])
+        arg_max_demand = np.argmax(demand[0, :])
+        max_demand2 = np.max([demand[0, i] if i != arg_max_demand else 0 for i in items_set])
         total_demand = np.sum(demand[0, :])
         # max demand excluding item i
-        max_demand_arr = np.array([np.max(np.ma.masked_equal(demand[0, :], demand[0, i])) for i in items_set])
+        max_demand_arr = np.array([max_demand if i != arg_max_demand else max_demand2 for i in items_set])
 
         m = self.grb_model
 
@@ -132,10 +137,12 @@ class ExtendedSimpleCovers:
 
             objective += m.getVarByName('w_s' + str(i)) * (pnt.inventory[i] - pnt.production[t, i])
             objective += m.getVarByName('w_k' + str(i)) * (-pnt.production[t, i] + cap * pnt.setup[t, i])
+            objective += m.getVarByName('w_p' + str(i)) * (-pnt.production[t2 - 1, i] +
+                                                           demand[1, i] * pnt.setup[t2 - 1, i])
             objective += m.getVarByName('q_s' + str(i)) * (pnt.setup[t, i] - 1)
             objective += m.getVarByName('d_s' + str(i)) * pnt.setup[t, i]
             for j in items_set:
-                objective += m.getVarByName('t_ks' + str(i) + str(j)) * (pnt.setup[t, i] * demand[0, i])
+                objective += m.getVarByName('t_ks' + str(i) + str(j)) * (-pnt.setup[t, i] * demand[0, i])
 
             m.chgCoeff(constraint, m.getVarByName('w_s' + str(i)), -demand[0][i])
 
@@ -189,19 +196,21 @@ class ExtendedSimpleCovers:
             model.write("test.lp")
         status = model.status
         if status == grb.GRB.status.OPTIMAL:
-            cover, complement = [], []
+            cover, complement, period = [], [], []
             if print_sol:
                 print 'esc objective: {}'.format(model.objVal)
                 for v in model.getVars():
                     if v.x > const.EPSILON:
                         print v.VarName, v.x
-            if model.objVal < -const.EPSILON:
+            if model.objVal < -0.1:
                 for i in range(self.PI):
                     if model.getVarByName('w_s{}'.format(str(i))).X > 0.5:
                         cover.append(i)
                     if model.getVarByName('w_k{}'.format(str(i))).X > 0.5:
                         complement.append(i)
-            return cover, complement
+                    if model.getVarByName('w_p{}'.format((str(i)))).X > 0.5:
+                        period.append(i)
+            return cover, complement, period
         elif model.status == grb.GRB.status.INF_OR_UNBD:
             model.computeIIS()
             model.write('test.ilp')
@@ -242,7 +251,7 @@ def add_var_array2d(model, var_type, var_name, obj_val1, obj_val2):
     :param obj_val2:
     :return:            2d list of gurobi variables
     """
-    temp_var = [model.addVar(vtype=var_type, name=var_name + str(i) + str(j), obj=obj_val1[i] * obj_val2[j])
+    temp_var = [model.addVar(vtype=var_type, name=var_name + str(i) + str(j), obj=-obj_val1[i] * obj_val2[j])
                 for i in range(obj_val1.size) for j in range(obj_val2.size)]
     return temp_var
 

@@ -9,6 +9,8 @@
 # noinspection PyUnresolvedReferences
 __author__ = 'ioannis'
 
+from sys import argv
+
 from gurobipy import GRB
 
 import X2PLdata as Cdata
@@ -16,35 +18,18 @@ import esc
 import LSModel as ls_Model
 
 
-def main():
-    my_data = Cdata.TrigeiroData('CL34.in')
+def main(filename, gurobi=False):
+    my_data = Cdata.TrigeiroData(filename)
+
     model = ls_Model.make_model(my_data, print_lp=True)
-    # root_lp = ls_Model.optimize(my_data, solve_relaxed=True, print_sol=True)
+
+    if gurobi:
+        ls_Model.optimize(my_data, model, solve_relaxed=False, log=True)
+        return
 
     esc_model = esc.ExtendedSimpleCovers()
 
     callback_closure(mdl=model, data=my_data, esc_model=esc_model)
-
-    # my_data.pointToSeparate.production = root_lp.production
-    # my_data.pointToSeparate.setup = root_lp.setup
-    #
-    # # period1 signifies the main period in which the cut is generated (PIR_1)
-    # # period2 signifies the period of inventory. Inventory is defined at the
-    # # beginning of a period, therefore we should be looking at least two periods ahead
-    # for period1 in range(my_data.Periods - 1):
-    # for period2 in range(period1 + 2, my_data.Periods):
-    #         my_data.period1 = period1
-    #         my_data.period2 = period2
-    #         my_data.pointToSeparate.inventory = root_lp.inventory[period2, :]
-    #         if not esc_model.is_populated:
-    #             esc_model.populate_model(my_data)
-    #             esc_model.is_populated = True
-    #         else:
-    #             esc_model.update_model(my_data)
-    #         cover, complement = esc_model.optimize_model(write_lp=True, print_sol=False)
-    #         ls_Model.add_esc(my_data, cover, complement, period1, period2)
-    #
-    # root_lp_esc_cuts = ls_Model.optimize(my_data, solve_relaxed=False, print_sol=True)
 
 
 def callback_closure(mdl, data, esc_model):
@@ -65,10 +50,15 @@ def callback_closure(mdl, data, esc_model):
                             esc_model.is_populated = True
                         else:
                             esc_model.update_model(data)
-                        cover, complement = esc_model.optimize_model(write_lp=False, print_sol=False)
-                        ls_Model.add_esc(data, cover, complement, period1, period2, callback=True, print_diag=True)
+                        cover, complement, period = esc_model.optimize_model(write_lp=False, print_sol=False)
+                        ls_Model.add_esc(data, cover, complement, period, period1, period2,
+                                         callback=True, print_diag=True)
 
     mdl.optimize(add_esc_callback)
 
 if __name__ == '__main__':
-    main()
+    if len(argv) > 1:
+        main(argv[1], gurobi=argv[2] == 'True')
+    else:
+        main('instance_12_6_10.in', False)
+        # 'instance_11_6_4.in'
